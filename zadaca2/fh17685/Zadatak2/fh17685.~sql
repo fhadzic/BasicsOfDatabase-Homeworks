@@ -1,0 +1,102 @@
+CREATE TABLE FAKTURA17685(faktura_id INTEGER PRIMARY KEY,
+                          kupac_id INTEGER NOT NULL REFERENCES kupac(kupac_id),
+                          iznos INTEGER NOT NULL,
+                          datum_kupoprodaje DATE NOT NULL,
+                          isporuka_id INTEGER NOT NULL REFERENCES isporuka(isporuka_id),
+                          ukp_prodanih_proizvoda INTEGER NOT NULL );
+
+CREATE TABLE NARUDZBA_PROIZVODA17685( narudzba_id INTEGER PRIMARY KEY,
+                                      proizvod_id INTEGER NOT NULL REFERENCES proizvod(proizvod_id),
+                                      kolicina_jednog_proizvoda INTEGER NOT NULL,
+                                      faktura_id INTEGER NOT NULL REFERENCES faktura17685(faktura_id),
+                                      iznos_popusta INTEGER );
+
+CREATE TABLE PROIZVOD17685( proizvod_id INTEGER PRIMARY KEY,
+                            naziv VARCHAR(102) NOT NULL,
+                            cijena INTEGER NOT NULL,
+                            broj_mjeseci_garancije INTEGER );
+
+CREATE TABLE PROIZVODJAC17685( proizvodjac_id INTEGER PRIMARY KEY REFERENCES pravno_lice(pravno_lice_id),
+                               email VARCHAR(50),
+                               naziv VARCHAR(50) NOT NULL,
+                               lokacija_id INTEGER NOT NULL UNIQUE REFERENCES lokacija(lokacija_id) );
+
+ALTER TABLE PROIZVOD17685 ADD ( proizvodjac_id INTEGER NOT NULL REFERENCES proizvodjac17685(proizvodjac_id) );
+
+INSERT INTO Faktura17685 (faktura_id, kupac_id, iznos, datum_kupoprodaje, isporuka_id, ukp_prodanih_proizvoda)
+            SELECT f.faktura_id, f.kupac_id, f.iznos, f.datum_kupoprodaje,f.isporuka_id, Nvl(n.ukp_prodanih_proizvoda,0)
+            FROM faktura f, ( SELECT t.faktura_id fakt_id,
+                                     Sum(t.kolicina_jednog_proizvoda) ukp_prodanih_proizvoda
+                              FROM narudzba_proizvoda t
+                              GROUP BY t.faktura_id ) n
+            WHERE f.faktura_id = n.fakt_id(+);
+
+INSERT INTO Narudzba_proizvoda17685 (narudzba_id, proizvod_id, kolicina_jednog_proizvoda, faktura_id, iznos_popusta)
+            SELECT n.narudzba_id, n.proizvod_id, n.kolicina_jednog_proizvoda, n.faktura_id,
+                   a.cijena*n.kolicina_jednog_proizvoda*( Nvl(p.postotak, 0) /100) iznos_popusta
+            FROM narudzba_proizvoda n, popust p, proizvod a
+            WHERE n.popust_id = p.popust_id(+)
+              AND n.proizvod_id = a.proizvod_id;
+
+INSERT INTO Proizvodjac17685( proizvodjac_id, email, naziv, lokacija_id )
+            SELECT p.proizvodjac_id, p.email, l.naziv, l.lokacija_id
+            FROM proizvodjac p, pravno_lice l
+            WHERE p.proizvodjac_id = l.pravno_lice_id;
+
+INSERT INTO Proizvod17685( proizvod_id, naziv, cijena, broj_mjeseci_garancije, proizvodjac_id )
+            SELECT p.proizvod_id, p.naziv || '(' || k.naziv || ')', p.cijena, p.broj_mjeseci_garancije, p.proizvodjac_id
+            FROM proizvod p, kategorija k
+            WHERE k.kategorija_id = p.kategorija_id;
+
+CREATE SEQUENCE trigger_seq
+INCREMENT BY 1
+START WITH 0
+MAXVALUE 100000000
+NOCYCLE
+NOCACHE;
+
+CREATE OR REPLACE TRIGGER Narudzba17685_trigger
+AFTER INSERT ON Narudzba_proizvoda
+FOR EACH ROW
+DECLARE
+  lv_iznos Narudzba_proizvoda17685.iznos_popusta%TYPE;
+BEGIN
+   lv_iznos := SELECT a.cijena*n.kolicina_jednog_proizvoda*( Nvl(p.postotak, 0) /100)
+   INSERT INTO Narudzba_proizvoda17685 (narudzba_id, proizvod_id, kolicina_jednog_proizvoda, faktura_id, iznos_popusta)
+   VALUES(:new.narudzba_id, :new.proizvod_id, :new.kolicina_jednog_proizvoda, :new.faktura_id, :new.popust_id);
+
+
+
+   INSERT INTO Faktura17685 (faktura_id, kupac_id, iznos, datum_kupoprodaje, isporuka_id, ukp_prodanih_proizvoda)
+
+END;
+
+
+
+SELECT * FROM Faktura17685;
+
+SELECT * FROM narudzba_proizvoda17685;
+
+SELECT * FROM proizvod17685;
+
+SELECT * FROM proizvodjac17685;
+
+
+SELECT * FROM Faktura;
+
+SELECT * FROM narudzba_proizvoda;
+
+SELECT * FROM proizvod;
+SELECT * FROM popust;
+
+SELECT * FROM proizvodjac;
+SELECT * FROM pravno_lice;
+
+
+DROP TABLE Narudzba_proizvoda17685;
+
+DROP TABLE PROIZVOD17685;
+
+DROP TABLE proizvodjac17685;
+
+DROP TABLE Faktura17685;
